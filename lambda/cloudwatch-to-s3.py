@@ -26,13 +26,12 @@ def lambda_handler(event, context):
         extra_args['nextToken'] = response['nextToken']
     
     for log_group in log_groups:
-        response = logs.list_tags_log_group(logGroupName=log_group['logGroupName'])
-        log_group_tags = response['tags']
-        if 'ExportToS3' in log_group_tags and log_group_tags['ExportToS3'] == 'true':
-            log_groups_to_export.append(log_group['logGroupName'])
-    
+        logGroupName=log_group['logGroupName']
+        if "eagle-" in logGroupName:
+            log_groups_to_export.append(logGroupName)
+    print("log_groups to export", log_groups_to_export)
     for log_group_name in log_groups_to_export:
-        ssm_parameter_name = ("/log-exporter-last-export/%s" % log_group_name).replace("//", "/")
+        ssm_parameter_name = ("/eagle/log-exporter-last-export/%s" % log_group_name).replace("//", "/")
         try:
             ssm_response = ssm.get_parameter(Name=ssm_parameter_name)
             ssm_value = ssm_response['Parameter']['Value']
@@ -43,38 +42,32 @@ def lambda_handler(event, context):
         
         print("--> Exporting %s to %s" % (log_group_name, os.environ['S3_BUCKET']))
         
-        if export_to_time - int(ssm_value) < (24 * 60 * 60 * 1000):
+        if export_to_time - int(ssm_value) < (24 * 60):
             # Haven't been 24hrs from the last export of this log group
             print("    Skipped until 24hrs from last export is completed")
             continue
         
-        max_retries = 10
-        while max_retries > 0:
-            try:
-                response = logs.create_export_task(
-                    logGroupName=log_group_name,
-                    fromTime=int(ssm_value),
-                    to=export_to_time,
-                    destination=os.environ['S3_BUCKET'],
-                    destinationPrefix=os.environ['AWS_ACCOUNT'] + '/' + log_group_name.strip('/')
-                )
-                print("    Task created: %s" % response['taskId'])
-                ssm_response = ssm.put_parameter(
-                    Name=ssm_parameter_name,
-                    Type="String",
-                    Value=str(export_to_time),
-                    Overwrite=True)
-
-                break
-                
-            except logs.exceptions.LimitExceededException:
-                max_retries = max_retries - 1
-                print("    Need to wait until all tasks are finished (LimitExceededException). Continuing %s additional times" % (max_retries))
-                time.sleep(5)
-                continue
+        try:
+            response = logs.create_export_task(
+                logGroupName=log_group_name,
+                fromTime=int(ssm_value),
+                to=export_to_time,
+                destination=os.environ['S3_BUCKET'],
+                destinationPrefix = log_group_name.strip('/')
+            )
+            print("    Task created: %s" % response['taskId'])
+            time.sleep(5)
             
-            except Exception as e:
-                print("    Error exporting %s: %s" % (log_group_name, getattr(e, 'message', repr(e))))
-                break
-            
+        except logs.exceptions.LimitExceededException:
+            print("    Need to wait until all tasks are fintagished (LimitExceededException). Continuing later...")
+            return
         
+        except Exception as e:
+            print("    Error exporting %s: %s" % (log_group_name, getattr(e, 'message', repr(e))))
+            continue
+        
+        ssm_response = ssm.put_parameter(
+            Name=ssm_parameter_name,
+            Type="String",
+            Value=str(export_to_time),
+            Overwrite=True)

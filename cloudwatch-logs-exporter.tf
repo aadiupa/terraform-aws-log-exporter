@@ -13,7 +13,7 @@ resource "random_string" "random" {
   length  = 8
   special = false
   upper   = false
-  number  = false
+  numeric  = false
 }
 
 resource "aws_iam_role" "log_exporter" {
@@ -61,7 +61,7 @@ resource "aws_iam_role_policy" "log_exporter" {
         "ssm:GetParametersByPath",
         "ssm:PutParameter"
       ],
-      "Resource": "arn:aws:ssm:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:parameter/log-exporter-last-export/*",
+      "Resource": "*",
       "Effect": "Allow"
     },
     {
@@ -70,7 +70,7 @@ resource "aws_iam_role_policy" "log_exporter" {
         "logs:CreateLogStream",
         "logs:PutLogEvents"
       ],
-      "Resource": "arn:aws:logs:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:log-group:/aws/lambda/log-exporter-*",
+      "Resource": "*",
       "Effect": "Allow"
     },
     {
@@ -80,7 +80,7 @@ resource "aws_iam_role_policy" "log_exporter" {
             "s3:PutObject",
             "s3:PutObjectACL"
         ],
-        "Resource": "arn:aws:s3:::${var.cloudwatch_logs_export_bucket}/*"
+        "Resource": "*"
     },
     {
         "Sid": "AllowCrossAccountBucketAcc",
@@ -89,7 +89,7 @@ resource "aws_iam_role_policy" "log_exporter" {
             "s3:PutBucketAcl",
             "s3:GetBucketAcl"
         ],
-        "Resource": "arn:aws:s3:::${var.cloudwatch_logs_export_bucket}"
+        "Resource": "*"
     }
   ]
 }
@@ -117,7 +117,7 @@ resource "aws_lambda_function" "log_exporter" {
 resource "aws_cloudwatch_event_rule" "log_exporter" {
   name                = "log-exporter-${random_string.random.result}"
   description         = "Fires periodically to export logs to S3"
-  schedule_expression = "rate(4 hours)"
+  schedule_expression = "rate(10 minutes)"
 }
 
 resource "aws_cloudwatch_event_target" "log_exporter" {
